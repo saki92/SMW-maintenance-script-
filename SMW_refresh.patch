@@ -1,0 +1,302 @@
+--- SMW_refreshData.php	2012-04-04 17:43:32.508895578 +0530
++++ SMW_refreshData_new.php	2012-04-04 17:43:42.336895585 +0530
+@@ -34,145 +34,183 @@
+  *
+  * @author Yaron Koren
+  * @author Markus Krötzsch
++ *
++ * this file has been rewritten in new style by Sakthi Velmani
+  * @file
+  * @ingroup SMWMaintenance
+  */
+ 
+-$optionsWithArgs = array( 'd', 's', 'e', 'n', 'b', 'startidfile', 'server', 'page' ); // -d <delay>, -s <startid>, -e <endid>, -n <numids>, --startidfile <startidfile> -b <backend>
+ 
+ require_once ( getenv( 'MW_INSTALL_PATH' ) !== false
+-	? getenv( 'MW_INSTALL_PATH' ) . "/maintenance/commandLine.inc"
+-	: dirname( __FILE__ ) . '/../../../maintenance/commandLine.inc' );
++	? getenv( 'MW_INSTALL_PATH' ) . "/maintenance/Maintenance.php"
++	: dirname( __FILE__ ) . '/../../../maintenance/Maintenance.php' );
+ 
+-global $smwgEnableUpdateJobs, $wgServer, $wgTitle;
+-$wgTitle = Title::newFromText( 'SMW_refreshData.php' );
+-$smwgEnableUpdateJobs = false; // do not fork additional update jobs while running this script
++class SMWrefreshData extends Maintenance {
++	
++	public function __construct()  {
++		parent::__construct();
++		$this->mDescription = 'Refreshes all data'; 
++		$this->addArg( 'backend', 'Executes the operation of the given name.', false );
++		$this->addArg( 'startid', '', false );
++		$this->addArg( 'delay', '', false );
++		$this->addArg( 'endid', '', false );
++		$this->addArg( 'numids', '', false );
++		$this->addArg( 'startidfile', '', false );
++		$this->addArg( 'server' , '', false );
++		$this->addArg( 'page' , '' , false );
++	}
+ 
+-if ( isset( $options['server'] ) ) {
+-	$wgServer = $options['server'];
+-}
++	public function execute() {
++		
++		global $smwgEnableUpdateJobs, $wgServer, $wgTitle;
++		$wgTitle = Title::newFromText( 'SMW_refreshData.php' );
++		$smwgEnableUpdateJobs = false; // do not fork additional update jobs while running this script
+ 
+-if ( array_key_exists( 'd', $options ) ) {
+-	$delay = intval( $options['d'] ) * 100000; // sleep 100 times the given time, but do so only each 100 pages
+-} else {
+-	$delay = false;
+-}
+ 
+-if ( isset( $options['page'] ) ) {
+-	$pages = explode( '|', $options['page'] );
+-} else {
+-	$pages = false;
+-}
++		$wgserver = $this->getArg( 'server', false );
+ 
+-$writeToStartidfile = false;
+-if ( array_key_exists( 's', $options ) ) {
+-	$start = max( 1, intval( $options['s'] ) );
+-} elseif ( array_key_exists( 'startidfile', $options ) ) {
+-	if ( !is_writable( file_exists( $options['startidfile'] ) ? $options['startidfile'] : dirname( $options['startidfile'] ) ) ) {
+-		die("Cannot use a startidfile that we can't write to.\n");
+-	}
+-	$writeToStartidfile = true;
+-	if ( is_readable( $options['startidfile'] ) ) {
+-		$start = max( 1, intval( file_get_contents( $options['startidfile'] ) ) );
+-	} else {
+-		$start = 1;
+-	}
+-} else {
+-	$start = 1;
+-}
+ 
+-if ( array_key_exists( 'e', $options ) ) { // Note: this might reasonably be larger than the page count
+-	$end = intval( $options['e'] );
+-} elseif ( array_key_exists( 'n', $options ) ) {
+-	$end = $start + intval( $options['n'] );
+-} else {
+-	$end = false;
+-}
++		$delay = $this->getArg( 'delete' );
++		if ( $delay == true ) {
++			$delay = intval( $delay * 100000 );
++		}
+ 
+-if ( array_key_exists( 'b', $options ) ) {
+-	global $smwgDefaultStore;
+-	$smwgDefaultStore = $options['b'];
+-	print "\nSelected storage $smwgDefaultStore for update!\n\n";
+-}
+ 
+-$verbose = array_key_exists( 'v', $options );
++		if ( $this->hasOption( 'page' ) ) {
++			$pages = explode( '|', $this->getArg( 'page' ) );
++		} else { 
++			$pages = false;
++		}
+ 
+-$filterarray = array();
+-if (  array_key_exists( 'c', $options ) ) {
+-	$filterarray[] = NS_CATEGORY;
+-}
+-if (  array_key_exists( 'p', $options ) ) {
+-	$filterarray[] = SMW_NS_PROPERTY;
+-}
+-if (  array_key_exists( 't', $options ) ) {
+-	$filterarray[] = SMW_NS_TYPE;
+-}
+-$filter = count( $filterarray ) > 0 ? $filterarray : false;
+ 
+-if (  array_key_exists( 'f', $options ) ) {
+-	print "\n  Deleting all stored data completely and rebuilding it again later!\n  Semantic data in the wiki might be incomplete for some time while this operation runs.\n\n  NOTE: It is usually necessary to run this script ONE MORE TIME after this operation,\n  since some properties' types are not stored yet in the first run.\n  The first run can normally use the parameter -p to refresh only properties.\n\n";
+-	if ( ( array_key_exists( 's', $options ) )  || ( array_key_exists( 'e', $options ) ) ) {
+-		print "  WARNING: -s or -e are used, so some pages will not be refreshed at all!\n    Data for those pages will only be available again when they have been\n    refreshed as well!\n\n";
+-	}
+ 
+-	print 'Abort with control-c in the next five seconds ...  ';
+-	wfCountDown( 6 );
++		$writeToStartidfile = false;
+ 
+-	smwfGetStore()->drop( $verbose );
+-	wfRunHooks( 'smwDropTables' );
+-	print "\n";
+-	smwfGetStore()->setup( $verbose );
+-	wfRunHooks( 'smwInitializeTables' );
+-	while ( ob_get_level() > 0 ) { // be sure to have some buffer, otherwise some PHPs complain
+-		ob_end_flush();
+-	}
+-	echo "\nAll storage structures have been deleted and recreated.\n\n";
+-}
+ 
+-$linkCache = LinkCache::singleton();
+-$num_files = 0;
+-if ( $pages == false ) {
+-	print "Refreshing all semantic data in the database!\n---\n" .
+-	" Some versions of PHP suffer from memory leaks in long-running scripts.\n" .
+-	" If your machine gets very slow after many pages (typically more than\n" .
+-	" 1000) were refreshed, please abort with CTRL-C and resume this script\n" .
+-	" at the last processed page id using the parameter -s (use -v to display\n" .
+-	" page ids during refresh). Continue this until all pages were refreshed.\n---\n";
+-	print "Processing all IDs from $start to " . ( $end ? "$end" : 'last ID' ) . " ...\n";
+-
+-	$id = $start;
+-	while ( ( ( !$end ) || ( $id <= $end ) ) && ( $id > 0 ) ) {
+-		if ( $verbose ) {
+-			print "($num_files) Processing ID " . $id . " ...\n";
+-		}
+-		smwfGetStore()->refreshData( $id, 1, $filter, false );
+-		if ( ( $delay !== false ) && ( ( $num_files + 1 ) % 100 === 0 ) ) {
+-			usleep( $delay );
++		if ( $this->hasOption( 'startid' ) ) {
++			$start = max( 1, intval( $this->getArg( 'startid' , false ) ) );
++		} elseif ( $this->hasOption( 'startidfile' ) ) {
++			if ( !is_writable( file_exists( $this->getArg( 'startidfile' ) ) ? ( $this->getArg( 'startidfile' ) ) : dirname( $this->getArg( 'startidfile' ) ) ) ) {
++			die ("cannot use a startidfile that we can't write to.\n");
++			}
++		$writeToStartidfile = true;
++			if ( is_readable( $this->getArg( 'startidfile' ) ) ) {
++				$start = max( 1, intval( file_get_contents( $this->getArg( 'startidfile' ) ) ) );
++			} else {
++				$start = 1;
++			}
++		} else {
++			$start = 1;
+ 		}
+-		$num_files++;
+-		$linkCache->clear(); // avoid memory leaks
+-	}
+-	if ( $writeToStartidfile ) {
+-		file_put_contents( $options['startidfile'], "$id" );
+-	}
+-	print "$num_files IDs refreshed.\n";
+-} else {
+-	print "Refreshing specified pages!\n\n";
+-	
+-	foreach ( $pages as $page ) {
+-		if ( $verbose ) {
+-			print "($num_files) Processing page " . $page . " ...\n";
++
++
++		if ( $this->hasOption( 'e' ) ) {
++			$end = intval( $this->getArg( 'e' ) );
++		} elseif ( $this->hasOption( 'n' ) ) {
++			$end = $start + intval( $this->getArg( 'n' ) );
++		} else {
++			$end = false;
++		}
++
++
++
++		if  ( $this->hasOption( 'b' , false ) ) {
++			global $smwgDefaultStore;
++			$smwgDefaultStore = $this->getArg( 'b' );
++			print "\nSelected storage $smwgDefaultStore for update!\n\n";
++		}
++
++
++		$verbose = $this->hasOption( 'v' , false );
++
++		$filterarray = array();
++		if ( $this->hasOption( 'c' ) ) {
++			$filterarray[] = NS_CATEGORY;
++		}
++		if ( $this->hasOption( 'p' ) ) {
++			$filterarray[] = SMW_NS_PROPERTY;
++		}
++		if ( $this->hasOption( 't' ) ) {
++			$filterarray[] = SMW_NS_TYPE;
+ 		}
++			$filter = count( $filterarray ) > 0 ? $filterarray : false;
++
++		global $smwgIP;
++		if ( !isset( $smwgIP ) ) {
++			$smwgIP = dirname(__FILE__) . '/../';
++		}
++
++		require_once( $smwgIP . 'includes/SMW_GlobalFunctions.php' );
++
++		if ( $this->hasOption( 'f' ) ) {
++			print "\n  Deleting all stored data completely and rebuilding it again later!\n  Semantic data in the wiki might be incomplete for some time while this operation runs.\n\n  NOTE: It is usually necessary to run this script ONE MORE TIME after this operation,\n  since some properties' types are not stored yet in the first run.\n  The first run can normally use the parameter -p to refresh only properties.\n\n";
++			if ( ( $this->hasOption( 's' ) ) || ( $this->hasOption( 'e' ) ) ) {
++				print "  WARNING: -s or -e are used, so some pages will not be refreshed at all!\n    Data for those pages will only be available again when they have been\n    refreshed as well!\n\n";
++			}
++
++			print 'Abort with control-c in the next five seconds ...  ';
++			wfCountDown( 6 );
++
++			smwfGetStore()->drop( $verbose );
++			wfRunHooks( 'smwDropTables' );
++			print "\n";
++			smwfGetStore()->setup( $verbose );
++			wfRunHooks( 'smwInitializeTables' );
++			while ( ob_get_level() > 0 ) { // be sure to have some buffer, otherwise some PHPs complain
++				ob_end_flush();
++			}
++			echo "\nAll storage structures have been deleted and recreated.\n\n";
++		}
++
++		$linkCache = LinkCache::singleton();
++		$num_files = 0;
++		if ( $pages == false ) {
++			print "Refreshing all semantic data in the database!\n---\n" .
++			" Some versions of PHP suffer from memory leaks in long-running scripts.\n" .
++			" If your machine gets very slow after many pages (typically more than\n" .
++			" 1000) were refreshed, please abort with CTRL-C and resume this script\n" .
++			" at the last processed page id using the parameter -s (use -v to display\n" .
++			" page ids during refresh). Continue this until all pages were refreshed.\n---\n";
++			print "Processing all IDs from $start to " . ( $end ? "$end" : 'last ID' ) . " ...\n";
++
++			$id = $start;
++			while ( ( ( !$end ) || ( $id <= $end ) ) && ( $id > 0 ) ) {
++				if ( $verbose ) {
++					print "($num_files) Processing ID " . $id . " ...\n";
++				}				
++				smwfGetStore()->refreshData( $id, 1, $filter, false );
++				if ( ( $delay !== false ) && ( ( $num_files + 1 ) % 100 === 0 ) ) {
++					usleep( $delay );
++				}
++				$num_files++;
++				$linkCache->clear(); // avoid memory leaks
++			}
++			if ( $writeToStartidfile ) {
++				file_put_contents( $this->getArg( 'startidfile' ) , "$id" );
++			}
++			print "$num_files IDs refreshed.\n";
++		} else {
++			print "Refreshing specified pages!\n\n";
++	
++			foreach ( $pages as $page ) {
++				if ( $verbose ) {
++					print "($num_files) Processing page " . $page . " ...\n";
++				}
+ 		
+-		$title = Title::newFromText( $page );
++				$title = Title::newFromText( $page );
+ 		
+-		if ( !is_null( $title ) ) {
+-			$updatejob = new SMWUpdateJob( $title );
+-			$updatejob->run();
+-		}
++				if ( !is_null( $title ) ) {
++					$updatejob = new SMWUpdateJob( $title );
++					$updatejob->run();
++				}
+ 		
+-		$num_files++;
+-	}
++				$num_files++;
++			}
+ 	
+-	print "$num_files pages refreshed.\n";
++			print "$num_files pages refreshed.\n";
++		}
++	} 
+ }
++
++$maintClass = 'SMWrefreshData';
++require_once( RUN_MAINTENANCE_IF_MAIN );
